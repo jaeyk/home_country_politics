@@ -1,0 +1,217 @@
+---
+title: "Data cleaning"
+author: "Jae Yeon Kim"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    theme: united
+---
+
+# Setup 
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+        purrr, # for functional programming
+        foreign, # for importing stata files 
+        tidyverse, # for the tidyverse framework 
+        psych, # for psych tools  
+        ggthemes, # for fancy ggplot themes
+        here, # for self-contained projects
+        ggpubr, # for pub-ready themes 
+        glue, # pasting string and objects
+        scales, # changing scales 
+        patchwork # putting ggplots together
+)
+
+source(here("functions", "utils.r"))
+
+# for publication-friendly theme 
+theme_set(theme_pubr())
+```
+
+# Import files 
+
+The data has 406 variables (the number of columns) and 6,448 observations (the number of rows for each column). Also, please note that the `table() function` shows that every survey participant participated in the full survey. 
+
+```{r}
+# Import 
+
+data <- read.dta(here::here("raw_data","naas16post-weighted-recoded.dta"))
+
+# Participation 
+table(data$fullsurvey)
+```
+
+# Turn factors into numbers
+
+```{r}
+# Turn factors into numbers 
+data <- data %>%
+  mutate(across(where(is.factor), compose(parse_number, as.character)))
+
+# There are 569 variables 
+ncol(data) 
+```
+
+# Select and rename variables 
+
+```{r}
+# Create each dataframe
+co_vars <- data %>%
+    dplyr::select(
+  
+        # ID
+        respid,     
+       
+        # Covariates
+        male, # male 
+        age, # age 
+        educ6, # edu 
+        ownhome, # home ownership 
+        race, # race 
+        democrat, # democrat
+        republican, # republican
+        q10_15, # income level
+        statesmp, # states 
+        s10_1, # nationality 
+        forborn, # foreign born 
+        citizen) %>% # citizen
+  rename("income" = "q10_15",
+         "states" = "statesmp")
+
+mar_vars <- data %>% dplyr::select(matches("micro|discrim")) %>%
+    select(-contains("index")) %>%
+    select(-contains("worship"))
+
+id_vars <- data %>% dplyr::select(matches("id_|id2_"))
+
+linked_vars <- data %>% dplyr::select(matches("linked"))
+
+comm_vars <- data %>% dplyr::select(commrace, commcult, commecon, commpol)
+
+# DV 
+
+dv_vars <- data %>%
+    dplyr::select(q3_6_a, q3_6_b, q3_6_c, q3_6_d, q3_6_f, q3_6_g) %>%
+    rename("inequality" = "q3_6_a",
+         "bank_reg" = "q3_6_b",
+         "minimum_wage" = "q3_6_c",
+         "rich_tax" = "q3_6_d",
+         "american_job" = "q3_6_f",
+         "free_college" = "q3_6_g")
+    
+# Bind them together
+df <- bind_cols(co_vars, mar_vars, id_vars, linked_vars, comm_vars, dv_vars)
+```
+
+# Recode values 
+
+## Some variables better treated as factors 
+
+Some variables are better treated as factors because they are categorical variables (e.g., race). 
+
+```{r}
+# Race
+df$race <- df$race %>%
+    as.character() %>%
+    recode("1" = "AAPI",  # Originally Asian Americans 
+           "2" = "AAPI",  # Originally Pacific Islanders
+           "3" = "White",
+           "4" = "Black",
+           "5" = "Black", # Originally African American
+           "6" = "Latino",
+           "9" = "Multiracial") %>%
+    as.factor()
+
+df <- df %>%
+  mutate(race = as.factor(race),
+         democrat = as.factor(democrat),
+         republican = as.factor(republican),
+         states = as.factor(states),
+         forborn = as.factor(forborn),
+         citizen = as.factor(citizen))
+```
+
+## Replace non-response values (`9`, `88`, `99`, `8888`, `9999`) with `NA`s
+
+```{r}
+df <- na_if(df, 9)
+df <- na_if(df, 88)
+df <- na_if(df, 99)
+df <- na_if(df, 8888)
+df <- na_if(df, 9999)
+
+glue("What's the percentage of missing values in the data AFTER replacing non-reponse values with NAs?: {(mean(is.na(df)) %>% round(2)) * 100}%")
+```
+
+## Reverse values 
+
+```{r}
+df$inequality <- 6 - df$inequality
+df$bank_reg <- 6 - df$bank_reg
+df$minimum_wage <- 6 - df$minimum_wage
+df$rich_tax <- 6 - df$rich_tax
+df$free_college <- 6 - df$free_college
+```
+
+## Add ethnic variables 
+
+```{r}
+# 19 people born in Taiwan
+table(data$q1_3a)
+table(data$s10_1)
+
+# National origin 
+df$nat_origin <- as.character(df$s10_1)
+df$s10_1 <- NULL
+```
+
+```{r}
+df$nat_origin[df$nat_origin == "1"] <- "Bangladeshi"
+df$nat_origin[df$nat_origin == "2"] <- "Cambodian"
+df$nat_origin[df$nat_origin == "3"] <- "Chinese"
+df$nat_origin[df$nat_origin == "4"] <- "Filipino"
+df$nat_origin[df$nat_origin == "5"] <- "Hmong"
+df$nat_origin[df$nat_origin == "6"] <- "Indian"
+df$nat_origin[df$nat_origin == "7"] <- "Japanese"
+df$nat_origin[df$nat_origin == "8"] <- "Korean"
+df$nat_origin[df$nat_origin == "9"] <- "Laotian"
+df$nat_origin[df$nat_origin == "10"] <- "Pakistani"
+df$nat_origin[df$nat_origin == "11"] <- "Vietnamese"
+df$nat_origin[df$nat_origin == "12"] <- "Native Hawaiian"
+df$nat_origin[df$nat_origin == "13"] <- "Samoan"
+df$nat_origin[df$nat_origin == "14"] <- "Bhutanese"
+df$nat_origin[df$nat_origin == "15"] <- "Burmese"
+df$nat_origin[df$nat_origin == "16"] <- "Fijian"
+df$nat_origin[df$nat_origin == "17"] <- "Indonesian"
+df$nat_origin[df$nat_origin == "18"] <- "Malayasian"
+df$nat_origin[df$nat_origin == "19"] <- "Mongolian"
+df$nat_origin[df$nat_origin == "20"] <- "Nepali"
+df$nat_origin[df$nat_origin == "21"] <- "Singaporean"
+df$nat_origin[df$nat_origin == "22"] <- "Sri Lankan"
+df$nat_origin[df$nat_origin == "23"] <- "Taiwanese"
+```
+
+## Rescale responses 
+
+Rescale ordinal responses on the same scale (0-1).
+
+```{r}
+# Re-scale ordinal responses
+rescaled <- df %>%
+  dplyr::select(where(is.numeric)) %>% # starts with q
+  apply(2, scales::rescale) %>%
+  as.data.frame() 
+```
+
+```{r}
+combined <- bind_cols(rescaled, df %>% select(-where(is.numeric)))
+```
+
+# Save the cleaned file 
+
+```{r}
+write.csv(combined, here("processed_data/cleaned.csv"))
+```
