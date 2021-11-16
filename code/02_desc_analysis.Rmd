@@ -1,0 +1,74 @@
+---
+title: "Data cleaning"
+author: "Jae Yeon Kim"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    theme: united
+---
+
+# Setup 
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+        purrr, # for functional programming
+        foreign, # for importing stata files 
+        tidyverse, # for the tidyverse framework 
+        psych, # for psych tools  
+        ggthemes, # for fancy ggplot themes
+        here, # for self-contained projects
+        ggpubr, # for pub-ready themes 
+        ggrepel, 
+        glue, # pasting string and objects
+        scales, # changing scales 
+        patchwork # putting ggplots together
+)
+
+source(here("functions", "utils.r"))
+
+# for publication-friendly theme 
+theme_set(theme_pubr())
+```
+
+# Read data 
+
+```{r}
+combined <- read.csv(here("processed_data/cleaned.csv"))
+```
+
+# Filter data 
+
+```{r}
+asians <- subset(combined, race == "AAPI")[,-1]
+```
+
+```{r}
+nat <- asians %>%
+    group_by(nat_origin) %>%
+    summarize(race_id = mean(id_asian),
+              ethnic_id = mean(id_ethnic)) %>%
+    ggplot(aes(x = race_id, y = ethnic_id, label = nat_origin)) +
+    geom_point() +
+    geom_smooth() +
+    ggrepel::geom_text_repel() +
+    labs(x = "Racial ID salience",
+         y = "Ethnic ID salience")
+
+nat_for <- asians %>%
+    group_by(nat_origin, forborn) %>%
+    summarize(race_id = mean(id_asian),
+              ethnic_id = mean(id_ethnic)) %>%
+    ggplot(aes(x = race_id, y = ethnic_id, label = nat_origin, col = factor(forborn))) +
+    geom_point() +
+    geom_smooth() +
+    scale_color_viridis_d(begin = 0.2 , end = 0.7) +
+    ggrepel::geom_text_repel() +
+    labs(x = "Racial ID salience",
+         y = "Ethnic ID salience",
+         col = "Foreign born")
+
+nat + nat_for
+ggsave(here("outputs", "desc.png"), width = 12, height = 8)
+```
